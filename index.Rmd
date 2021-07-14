@@ -1,0 +1,122 @@
+---
+title: "Tarea"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Carga de bibliotecas
+Se van a cargar las bibliotecas necesarias.
+
+```{r message=FALSE, warning=FALSE}
+library(sf)
+library(raster)
+library(dplyr)
+library(spData)
+library(leaflet)
+library(plotly)
+library(DT)
+library(tidyr)
+```
+
+##Carga de datos
+Se cargarán los datos de orquídeas.
+
+```{r message=FALSE, warning=FALSE}
+orq <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/gbif/orchidaceae-cr-registros.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude",
+      "Y_POSSIBLE_NAMES=decimalLatitude"
+    ),
+    quiet = TRUE
+  )
+
+asp <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/sinac/asp/asp-wgs84.geojson",
+    quiet = TRUE
+  )
+st_crs(asp) = 4326
+st_crs(orq) = 4326
+```
+
+##Limpieza
+
+```{r message=FALSE, warning=FALSE}
+orq$species[orq$species == ""] <- "orquideas"
+
+orq <- orq %>%
+  filter(!is.na(coordinateUncertaintyInMeters) & coordinateUncertaintyInMeters <= 1000)%>%
+  filter(species!="orquideas")
+
+asp <- asp %>%
+  filter(descripcio!="Area Marina de Manejo" & descripcio!="Area marina protegida")
+
+asp_registros <-
+  asp %>%
+  st_join(orq) %>%
+  group_by(nombre_asp) %>%
+  summarize(especies = n_distinct(species,na.rm = TRUE))
+st_crs(asp_registros) = 4326
+```
+
+##Paleta de colores
+Se asignarán colores.
+
+```{r message=FALSE, warning=FALSE}
+# Paleta de colores
+colores_registros <-
+  colorNumeric(palette = "YlOrRd",
+               domain = asp_registros$especies,
+               na.color = "transparent")
+
+# Paleta de colores
+colores_especies <-
+  colorNumeric(palette = "YlOrRd",
+               domain = asp_registros$especies,
+               na.color = "transparent")
+```
+
+##El Mapa
+Por último se cargará el mapa.
+
+```{r message=FALSE, warning=FALSE}
+# Mapa Leaflet
+
+leaflet() %>%
+  addTiles(group = "OSM") %>%
+  addPolygons(
+    data = asp_registros,
+    fillColor = ~ colores_especies(asp_registros$especies),
+    fillOpacity = 0.7,
+    stroke = TRUE,
+    color = "black",
+    weight = 1,
+    popup = paste(
+      paste(
+        "<strong>Provincia:</strong>",
+        asp_registros$nombre_asp
+      ),
+      paste(
+        "<strong>Cantidad de especies:</strong>",
+        asp_registros$especies
+        
+      ),
+      sep = '<br/>'
+    ),
+    group = "Provincias - especies"
+  ) %>%
+  addLayersControl(baseGroups = c("OSM"),
+                   overlayGroups = c("Provincias - especies")) %>%
+  addLegend(
+    position = "bottomleft",
+    pal = colores_especies,
+    values = asp_registros$especies,
+    group = "Provincias - especies",
+    title = "Cantidad de orquideas")   
+```
+
